@@ -162,8 +162,6 @@ Below is the query being used in the example we have in the repo link. For query
  }
 ```
 
-### Contract Security
-Please submit your Contract Addresses and Pool Addresses through this [Form](https://forms.gle/DJ2975hZwhz32t5r6).
 
 ### Adapter Example
 In this repo, there is an adapter example. This adapter aims to get data positions from the subrgaph and calculate the TVL by users.
@@ -171,9 +169,6 @@ The main scripts is generating a output as CSV file.
 
 [Adapter Example](adapters/example/dex/src/index.ts)
 
-## Notes
-1. Please don't fork the repo. Just clone it and raise a PR in to the main branch.
-2. Please make sure to have a "compile" script in package.json file. So, we are able to compile the typescript files into `dist/index.js` file.
 
 ## How to execute this project?
 
