@@ -5,3 +5,4 @@ Ds_Store
 package-lock.json
 bun.lockb
 outputData.csv
+.env

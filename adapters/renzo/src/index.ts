@@ -1,178 +1,129 @@
-import * as fs from "fs";
-import { format, write } from "fast-csv";
-import csv from "csv-parser";
-require("dotenv").config();
+import fs from 'fs'
+import { format } from 'fast-csv'
+import csv from 'csv-parser'
+import { config } from 'dotenv'
+import { BlockData, OutputDataRow } from './types'
+import {
+  EXCLUDED_ADDRESS,
+  LINEA_INDEXER_QUERY_ENDPOINT,
+  EzETH_ADDRESS,
+  EZETH_SYMBOL,
+} from './const'
 
-const excludedAddresses = new Set([
-  "0x8a90d208666deec08123444f67bf5b1836074a67", // Mendi
-  "0x0684fc172a0b8e6a65cf4684edb2082272fe9050", // Zerolend
-  "0x76b0d13428eb01f12f132aa58707d254c42df568", // Nilev2
-  "0xa9a1fb9f6664a0b6bfb1f52724fd7b23842248c5", // Nilev2
-  "0x6ba5ccc757541851d610ecc8f8ac3714b5f95314", // Nile v3
-  "0x2c88A441418E06b9F3e565c2f866Fcb03c9409E2", // Layerbank
-  "0x057819bbc15121c923620c27303b2Ed58b87cF86", // Lynex
-  "0x7160570BB153Edd0Ea1775EC2b2Ac9b65F1aB61B", // Syncswap
-  "0xfDe733b5DE5B5a06C68353e01E4c1D3415C89560", // Pancakeswap
-  "0xa05eF29e9aC8C75c530c2795Fa6A800e188dE0a9", // Connext
-  "0x62cE247f34dc316f93D3830e4Bf10959FCe630f8", // ZkLink
-]);
+config()
 
-type OutputDataSchemaRow = {
-  block_number: number;
-  timestamp: number;
-  user_address: string;
-  token_address: string;
-  token_balance: bigint;
-  token_symbol: string;
-  usd_price: number;
-};
+const hourlyBlocksFile = 'hourly_blocks.csv'
+const outputFile = 'outputData.csv'
 
-interface BlockData {
-  blockNumber: number;
-  blockTimestamp: number;
-}
+const API_KEY = process.env.RENZO_API_KEY || ''
+const QUERY_SIZE = 500000
+const getSQLQuery = (blockNumber: number) => `
+SELECT
+  id, ezETHBalance
+FROM
+  AccountSnapshot t1
+  JOIN (
+    SELECT
+      id,
+      max(__genBlockNumber__) as block
+    FROM
+      AccountSnapshot
+    WHERE
+      __genBlockNumber__ <= ${blockNumber}
+    GROUP BY id
+  ) t2
+  ON
+    t1.id = t2.id AND
+    t1.__genBlockNumber__ = t2.block
+`
 
-const querySize = 500000;
-const EZ_ETH_ADDRESS = "0x2416092f143378750bb29b79eD961ab195CcEea5";
-const TOKEN_SYMBOL = "EZETH";
-const RENZO_INDEXER_INTERFACE =
-  "https://app.sentio.xyz/api/v1/analytics/renzo/ezeth-points-newdb-linea/sql/execute";
-const API_KEY = process.env.RENZO_API_KEY || "";
-
-export const getUserTVLByBlock = async (
-  blocks: BlockData
-): Promise<OutputDataSchemaRow[]> => {
-  const { blockNumber, blockTimestamp } = blocks;
+export const getUserTVLByBlock = async (block: BlockData): Promise<OutputDataRow[]> => {
+  const { blockNumber, blockTimestamp } = block;
   try {
-    const response = await fetch(RENZO_INDEXER_INTERFACE, {
-      method: "POST",
+    const response = await fetch(LINEA_INDEXER_QUERY_ENDPOINT, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "api-key": API_KEY,
+        'Content-Type': 'application/json',
+        'api-key': API_KEY,
       },
       body: JSON.stringify({
         sqlQuery: {
-          sql: `WITH RankedByBlockNumber AS (
-                    SELECT *,
-                           ROW_NUMBER() OVER (PARTITION BY account ORDER BY block_number DESC) AS row_num
-                    FROM \`point_update\`
-                    WHERE block_number <= ${blockNumber}
-                  )
-                  SELECT account, newEzETHBalance, block_number, newTimestampMilli, address
-                  FROM RankedByBlockNumber
-                  WHERE row_num = 1 AND newEzETHBalance > 0
-                  `,
-          size: querySize,
-        },
-      }),
-    });
-    const data = await response.json();
+          sql: getSQLQuery(blockNumber),
+          size: QUERY_SIZE,
+        }
+      })
+    })
+
+    const data = await response.json()
     if (!data.result || !data.result.rows) {
-      console.error(`No data found for block ${blockNumber}`);
-      return [];
+      console.error(`No data found for block ${blockNumber}`)
+      return []
     }
-    const csvRows: OutputDataSchemaRow[] = data.result.rows
-      .filter((row: any) => !excludedAddresses.has(row.address.toLowerCase()))
+
+    return data.result.rows
+      .filter((row: any) => !EXCLUDED_ADDRESS.has(row.id.toLowerCase()))
       .map((row: any) => ({
         block_number: blockNumber,
         timestamp: blockTimestamp,
-        user_address: row.account.toLowerCase(),
-        token_address: row.address.toLowerCase(),
-        token_balance: BigInt(row.newEzETHBalance),
-        token_symbol: TOKEN_SYMBOL,
+        user_address: row.id.toLowerCase(),
+        token_address: EzETH_ADDRESS.toLowerCase(),
+        token_balance: BigInt(row.ezETHBalance),
+        token_symbol: EZETH_SYMBOL,
         usd_price: 0, // 0 as default
-      }));
-    return csvRows;
-  } catch (error) {
-    console.error(`An error occurred for block ${blockNumber}:`, error);
-    return [];
+      }))
+  } catch (err) {
+    console.error(`An error occurred for block ${blockNumber}:`, err);
+    return []
   }
-};
+}
 
-const readBlocksFromCSV = async (filePath: string): Promise<BlockData[]> => {
-  const blocks: BlockData[] = [];
+async function processBlocks(blocks: BlockData[]) {
+  console.log(blocks)
 
-  await new Promise<void>((resolve, reject) => {
-    fs.createReadStream(filePath)
-      .pipe(csv()) // Specify the separator as '\t' for TSV files
-      .on("data", (row) => {
-        const blockNumber = parseInt(row.number, 10);
-        const blockTimestamp = parseInt(row.timestamp, 10);
-        if (!isNaN(blockNumber) && blockTimestamp) {
-          blocks.push({ blockNumber: blockNumber, blockTimestamp });
-        }
-      })
-      .on("end", () => {
-        resolve();
-      })
-      .on("error", (err) => {
-        reject(err);
-      });
-  });
-
-  return blocks;
-};
-
-readBlocksFromCSV("hourly_blocks.csv")
-  .then(async (blocks: any[]) => {
-    console.log(blocks);
-    // const allCsvRows: any[] = [];
-
-    // for (const block of blocks) {
-    //   try {
-    //     const result = await getUserTVLByBlock(block);
-    //     allCsvRows.push(...result);
-    //   } catch (error) {
-    //     console.error(`An error occurred for block ${block}:`, error);
-    //   }
-    // }
-    // await new Promise((resolve, reject) => {
-    //   const ws = fs.createWriteStream(`outputData.csv`, { flags: "w" });
-    //   write(allCsvRows, { headers: true })
-    //     .pipe(ws)
-    //     .on("finish", () => {
-    //       console.log(`CSV file has been written.`);
-    //       resolve;
-    //     });
-    // });
-    await main(blocks);
-  })
-  .catch((err) => {
-    console.error("Error reading CSV file:", err);
-  });
-
-export const main = async (blocks: BlockData[]) => {
   // Open a write stream for the unified output file.
-  const writeStream = fs.createWriteStream("outputData.csv", {
-    flags: "w", // 'w' to create a new file or overwrite the existing one.
-  });
+  const writeStream = fs.createWriteStream(outputFile, {
+    flags: 'w', // 'w' to create a new file or overwrite the existing one.
+  })
 
   const csvFormat = format({
     headers: true,
     includeEndRowDelimiter: true,
     writeHeaders: true,
-  });
-
-  csvFormat.pipe(writeStream);
+  })
+  csvFormat.pipe(writeStream)
 
   for (const block of blocks) {
-    const csvRows = await getUserTVLByBlock(block);
-    console.log(`Processing block: ${block.blockNumber}`);
+    console.log(`Processing block: ${block.blockNumber}`)
+    const csvRows = await getUserTVLByBlock(block)
 
     // Writing each row to the CSV format stream
-    csvRows.forEach((row) => {
-      csvFormat.write(row);
-    });
+    csvRows.forEach(row => csvFormat.write(row))
   }
+}
 
-  csvFormat.end();
+async function readBlocksFromCSV(filePath: string): Promise<BlockData[]> {
+  return new Promise<BlockData[]>((resolve, reject) => {
+    const blocks: BlockData[] = []
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on('data', (row) => {
+        const blockNumber = parseInt(row.number, 10)
+        const blockTimestamp = parseInt(row.timestamp, 10)
+        if (!isNaN(blockNumber) && blockTimestamp) {
+          blocks.push({ blockNumber, blockTimestamp })
+        }
+      })
+      .on('end', () => {
+        resolve(blocks)
+      })
+      .on('error', (err) => {
+        reject(err)
+      })
+  })
+}
 
-  writeStream.on("finish", () => {
-    console.log("CSV file has been written.");
-  });
-};
-
-// main([
-//   { blockNumber: 4452354, blockTimestamp: 123456 },
-//   { blockNumber: 3452355, blockTimestamp: 123457 },
-// ]);
+readBlocksFromCSV(hourlyBlocksFile)
+  .then(blocks => processBlocks(blocks))
+  .catch((err) => {
+    console.error("Error reading CSV file:", err)
+  })
