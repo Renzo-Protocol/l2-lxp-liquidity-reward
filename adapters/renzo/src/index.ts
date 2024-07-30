@@ -99,6 +99,10 @@ async function processBlocks(blocks: BlockData[]) {
     // Writing each row to the CSV format stream
     csvRows.forEach(row => csvFormat.write(row))
   }
+  csvFormat.end()
+  writeStream.on('finish', () => {
+    console.log('CSV file has been written.')
+  })
 }
 
 async function readBlocksFromCSV(filePath: string): Promise<BlockData[]> {
