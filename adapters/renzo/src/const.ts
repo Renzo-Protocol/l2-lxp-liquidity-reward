@@ -1,8 +1,8 @@
 export const EzETH_ADDRESS = '0x2416092f143378750bb29b79eD961ab195CcEea5'
-export const EZETH_SYMBOL = 'EZETH'
+export const EzETH_SYMBOL = 'EZETH'
 export const LINEA_INDEXER_QUERY_ENDPOINT = 'https://app.sentio.xyz/api/v1/analytics/renzo/ezeth-points-newdb-linea/sql/execute'
 
-export const EXCLUDED_ADDRESS = new Set([
+export const EXCLUDED_ADDRESSES = new Set([
   '0x8a90d208666deec08123444f67bf5b1836074a67', // Mendi
   '0x0684fc172a0b8e6a65cf4684edb2082272fe9050', // Zerolend
   '0x76b0d13428eb01f12f132aa58707d254c42df568', // Nilev2

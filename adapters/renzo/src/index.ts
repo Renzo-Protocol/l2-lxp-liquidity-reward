@@ -4,10 +4,10 @@ import csv from 'csv-parser'
 import { config } from 'dotenv'
 import { BlockData, OutputDataRow } from './types'
 import {
-  EXCLUDED_ADDRESS,
+  EXCLUDED_ADDRESSES,
   LINEA_INDEXER_QUERY_ENDPOINT,
   EzETH_ADDRESS,
-  EZETH_SYMBOL,
+  EzETH_SYMBOL,
 } from './const'
 
 config()
@@ -61,14 +61,14 @@ export const getUserTVLByBlock = async (block: BlockData): Promise<OutputDataRow
     }
 
     return data.result.rows
-      .filter((row: any) => !EXCLUDED_ADDRESS.has(row.id.toLowerCase()))
+      .filter((row: any) => !EXCLUDED_ADDRESSES.has(row.id.toLowerCase()))
       .map((row: any) => ({
         block_number: blockNumber,
         timestamp: blockTimestamp,
         user_address: row.id.toLowerCase(),
         token_address: EzETH_ADDRESS.toLowerCase(),
         token_balance: BigInt(row.ezETHBalance),
-        token_symbol: EZETH_SYMBOL,
+        token_symbol: EzETH_SYMBOL,
         usd_price: 0, // 0 as default
       }))
   } catch (err) {
